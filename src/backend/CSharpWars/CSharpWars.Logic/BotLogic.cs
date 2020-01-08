@@ -25,6 +25,7 @@ namespace CSharpWars.Logic
         private readonly IMapper<Bot, BotDto> _botMapper;
         private readonly IMapper<Bot, BotToCreateDto> _botToCreateMapper;
         private readonly IArenaLogic _arenaLogic;
+        private Random _random = new Random();
 
         public BotLogic(
             IRandomHelper randomHelper,
@@ -48,7 +49,11 @@ namespace CSharpWars.Logic
 
         public async Task<IList<BotDto>> GetAllActiveBots()
         {
-            throw new NotImplementedException();
+            var dateTimeToCompare = DateTime.UtcNow.AddSeconds(-10);
+            var activeBots = await _botRepository.Find(
+                x => x.CurrentHealth > 0 || x.TimeOfDeath > dateTimeToCompare, 
+                include => include.Player);
+            return _botMapper.Map(activeBots);
         }
 
         public async Task<IList<BotDto>> GetAllLiveBots()
@@ -63,7 +68,33 @@ namespace CSharpWars.Logic
 
         public async Task<BotDto> CreateBot(BotToCreateDto botToCreate)
         {
-            throw new NotImplementedException();
+            var bot = _botToCreateMapper.Map(botToCreate);
+            var arena = await _arenaLogic.GetArena();
+            var player = await _playerRepository.Single(x => x.Id == botToCreate.PlayerId);
+            player.LastDeployment = DateTime.UtcNow;
+            
+            bot.Player = player;
+            bot.Orientation = _randomHelper.Get<PossibleOrientations>();
+            bot.X = _random.Next(-arena.Height, arena.Height) / 2;
+            bot.Y = _random.Next(-arena.Width, arena.Width) / 2;
+            bot.CurrentHealth = bot.MaximumHealth;
+            bot.CurrentStamina = bot.MaximumStamina;
+            bot.Memory = new Dictionary<string, string>().Serialize();
+
+            bot.TimeOfDeath = DateTime.MaxValue;
+
+            using (var transaction = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
+            {
+                bot = await _botRepository.Create(bot);
+                var botScript = await _scriptRepository.Single(x => x.Id == bot.Id);
+                botScript.Script = botToCreate.Script;
+                await _scriptRepository.Update(botScript);
+                await _playerRepository.Update(player);
+                transaction.Complete();
+            }
+
+            var createdBot = _botMapper.Map(bot);
+            return createdBot;
         }
 
         public async Task UpdateBots(IList<BotDto> bots)

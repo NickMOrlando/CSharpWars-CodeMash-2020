@@ -27,7 +27,13 @@ namespace CSharpWars.Logic
 
         public async Task<PlayerDto> CreatePlayer(string playerName)
         {
-            throw new NotImplementedException();
+            var player = new Player
+            {
+                Name = playerName,
+                LastDeployment = DateTime.MinValue
+            };
+            var createdPlayer = await _playerRepository.Create(player);
+            return _playerMapper.Map(createdPlayer);
         }
     }
 }
